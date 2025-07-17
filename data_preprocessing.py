@@ -1,109 +1,79 @@
-import pandas as pd
-import os
 from datasets import load_dataset
+import pandas as pd
+import json
 
-def analyze_wave_ui_data(ds):
+def analyze_dataset(ds):
     """
-    Performs a deeper analysis of the WaveUI-25K dataset using pandas.
+    Analyzes the loaded Hugging Face dataset.
     """
-    print("\n" + "#" * 20 + " WAVEUI DEEP ANALYSIS " + "#" * 20 + "\n")
+    print("Dataset features:")
+    print(ds['train'].features)
+    print("\nSample data:")
+    # Inspect the first sample
+    sample = ds['train'][0]
+    print(sample)
 
-    # Convert to pandas DataFrame
-    df = ds['train'].to_pandas()
-
-    # --- Categorical Feature Distribution ---
-    print("--- Platform Distribution ---")
-    print(df['platform'].value_counts())
-    print("\n" + "="*50 + "\n")
-
-    print("--- UI Element Type Distribution (Top 15) ---")
-    print(df['type'].value_counts().nlargest(15))
-    print("\n" + "="*50 + "\n")
-
-    print("--- Language Distribution ---")
-    print(df['language'].value_counts())
-    print("\n" + "="*50 + "\n")
-
-    # --- Numerical Feature Analysis ---
-    # Resolution
-    print("--- Screen Resolution Distribution (Top 10) ---")
-    # Convert list to a hashable type (tuple) for value_counts
-    resolutions = df['resolution'].apply(tuple)
-    print(resolutions.value_counts().nlargest(10))
-    print("\n" + "="*50 + "\n")
-
-    # Bbox size
-    print("--- Bounding Box Size Analysis ---")
-    df['bbox_width'] = df['bbox'].apply(lambda x: x[2] - x[0])
-    df['bbox_height'] = df['bbox'].apply(lambda x: x[3] - x[1])
-    print(df[['bbox_width', 'bbox_height']].describe())
-    print("\n" + "="*50 + "\n")
-
-    print("WaveUI deep analysis data generated successfully!")
-
-def load_and_preprocess_retailrocket_data(data_path):
+def extract_features(data):
     """
-    Loads and preprocesses the RetailRocket dataset.
+    Extracts statistical features from a single data point.
     """
-    print("\n" + "#" * 20 + " RETAILROCKET PREPROCESSING " + "#" * 20 + "\n")
+    features = {}
 
-    # Define file paths
-    events_path = os.path.join(data_path, 'events.csv')
-    item_properties_part1_path = os.path.join(data_path, 'item_properties_part1.csv')
-    item_properties_part2_path = os.path.join(data_path, 'item_properties_part2.csv')
-    category_tree_path = os.path.join(data_path, 'category_tree.csv')
+    # UI element counts
+    element_types = ['button', 'link', 'input', 'text', 'image']
+    for element_type in element_types:
+        features[f'{element_type}_count'] = 0
 
-    # --- Load Data ---
-    print("--- Loading RetailRocket Data ---")
-    try:
-        events_df = pd.read_csv(events_path)
-        item_properties_df1 = pd.read_csv(item_properties_part1_path)
-        item_properties_df2 = pd.read_csv(item_properties_part2_path)
-        category_tree_df = pd.read_csv(category_tree_path)
-        print("All RetailRocket CSV files loaded successfully.")
-    except FileNotFoundError as e:
-        print(f"Error loading RetailRocket file: {e}. Please ensure all files are in the specified path.")
-        return None, None, None
-    except Exception as e:
-        print(f"An error occurred during RetailRocket data loading: {e}")
-        return None, None, None
+    # For simplicity, we'll use the 'type' field to count elements.
+    # A more robust approach would involve deeper analysis of the data.
+    if data['type'] in element_types:
+        features[f'{data["type"]}_count'] = 1
 
-    # Combine item_properties
-    item_properties_df = pd.concat([item_properties_df1, item_properties_df2], ignore_index=True)
-    print(f"Combined item_properties_part1.csv and item_properties_part2.csv. Total rows: {len(item_properties_df)}")
+    # Bounding box features
+    if data['bbox']:
+        x1, y1, x2, y2 = data['bbox']
+        width = x2 - x1
+        height = y2 - y1
+        features['avg_width'] = width
+        features['avg_height'] = height
+        features['avg_area'] = width * height
+        features['center_x'] = (x1 + x2) / 2
+        features['center_y'] = (y1 + y2) / 2
 
-    # Convert timestamps to datetime
-    events_df['timestamp'] = pd.to_datetime(events_df['timestamp'], unit='ms')
-    item_properties_df['timestamp'] = pd.to_datetime(item_properties_df['timestamp'], unit='ms')
-    print("Timestamps converted to datetime objects.")
+    # Text features
+    if data['OCR']:
+        features['text_density'] = len(data['OCR']) / (features.get('avg_area', 1) + 1e-6)
+    else:
+        features['text_density'] = 0
 
-    print("RetailRocket data preprocessing complete.")
-    return events_df, item_properties_df, category_tree_df
+    # UI complexity
+    features['ui_complexity'] = 1 # In this simplified case, each entry is one element
+
+    return features
 
 
 def main():
     """
-    Loads the WaveUI-25K and RetailRocket datasets and performs analysis/preprocessing.
+    Main function to download, analyze, and preprocess the dataset.
     """
-    try:
-        # --- WaveUI-25K Data ---
-        print("\n" + "="*20 + " Processing WaveUI-25K Dataset " + "="*20 + "\n")
-        ds_wave_ui = load_dataset("agentsea/wave-ui-25k")
-        analyze_wave_ui_data(ds_wave_ui)
+    # Load the dataset
+    print("Downloading the dataset...")
+    ds = load_dataset("agentsea/wave-ui-25k")
+    print("Dataset downloaded successfully.")
 
-        # --- RetailRocket Data ---
-        print("\n" + "="*20 + " Processing RetailRocket Dataset " + "="*20 + "\n")
-        retailrocket_data_path = "/home/seokjun/pj/PagePilot/data/retailrocket/"
-        events_df, item_properties_df, category_tree_df = load_and_preprocess_retailrocket_data(retailrocket_data_path)
+    # Analyze the dataset structure
+    analyze_dataset(ds)
 
-        if events_df is not None:
-            print("\nRetailRocket DataFrames loaded and preprocessed:")
-            print(f"Events DataFrame shape: {events_df.shape}")
-            print(f"Item Properties DataFrame shape: {item_properties_df.shape}")
-            print(f"Category Tree DataFrame shape: {category_tree_df.shape}")
+    # Extract features and create a DataFrame
+    print("\nExtracting features...")
+    feature_list = [extract_features(item) for item in ds['train']]
+    df = pd.DataFrame(feature_list)
 
-    except Exception as e:
-        print(f"An error occurred: {e}")
+    # Save the preprocessed data
+    output_path = "/home/seokjun/pj/PagePilot/data/preprocessed_waveui.csv"
+    print(f"Saving preprocessed data to {output_path}...")
+    df.to_csv(output_path, index=False)
+    print("Preprocessing complete.")
 
 if __name__ == "__main__":
     main()
