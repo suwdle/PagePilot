@@ -4,3 +4,6 @@
 agent/
 # dataset
 data/
+
+# cache file
+__pycache__/
