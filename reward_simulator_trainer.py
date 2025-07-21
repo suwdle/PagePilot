@@ -11,7 +11,7 @@ def main():
     Main function to train and save the reward simulator model.
     """
     # Load the labeled dataset
-    input_path = "/home/seokjun/pj/PagePilot/data/labeled_waveui.csv"
+    input_path = "./data/labeled_waveui.csv"
     print(f"Loading labeled data from {input_path}...")
     df = pd.read_csv(input_path)
 
@@ -38,7 +38,7 @@ def main():
     print(f"Mean Squared Error on the test set: {mse:.6f}")
 
     # Save the trained model
-    model_dir = "/home/seokjun/pj/PagePilot/models"
+    model_dir = "./models"
     os.makedirs(model_dir, exist_ok=True)
     model_path = os.path.join(model_dir, "reward_simulator_lr.joblib")
     print(f"Saving the trained model to {model_path}...")
