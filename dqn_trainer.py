@@ -49,7 +49,7 @@ def train_dqn():
     REPLAY_BUFFER_SIZE = 10000
 
     # Initialize environment and networks
-    data_path = "./data/labeled_waveui.csv"
+    data_path = "./data/raw_elements.csv" # Use raw data
     model_path = "./models/reward_simulator_lgbm.joblib"
     env = PagePilotEnv(data_path, model_path)
     
@@ -57,7 +57,8 @@ def train_dqn():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    input_dim = env.observation_space.shape[0]
+    # input_dim is now derived from the _state_to_vector output
+    input_dim = env.observation_space.shape[0] 
     output_dim = env.action_space.n
 
     policy_net = DQN(input_dim, output_dim).to(device)
@@ -71,8 +72,8 @@ def train_dqn():
     steps_done = 0
 
     for i_episode in range(EPISODES):
-        state = env.reset()
-        state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
+        state_vector = env.reset() # env.reset() now returns a vector
+        state = torch.tensor(state_vector, dtype=torch.float32, device=device).unsqueeze(0)
         total_reward = 0
 
         while True:
@@ -86,12 +87,12 @@ def train_dqn():
             else:
                 action = torch.tensor([[random.randrange(output_dim)]], device=device, dtype=torch.long)
 
-            next_state_np, reward_val, done, _ = env.step(action.item())
+            next_state_vector, reward_val, done, _ = env.step(action.item()) # env.step() now returns a vector
             reward = torch.tensor([reward_val], device=device)
             total_reward += reward.item()
 
             if not done:
-                next_state = torch.tensor(next_state_np, dtype=torch.float32, device=device).unsqueeze(0)
+                next_state = torch.tensor(next_state_vector, dtype=torch.float32, device=device).unsqueeze(0)
             else:
                 next_state = None
 
