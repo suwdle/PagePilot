@@ -50,7 +50,7 @@ def train_dqn():
 
     # Initialize environment and networks
     data_path = "./data/labeled_waveui.csv"
-    model_path = "./models/reward_simulator_lr.joblib"
+    model_path = "./models/reward_simulator_lgbm.joblib"
     env = PagePilotEnv(data_path, model_path)
     
     # Set device to GPU if available, otherwise CPU
@@ -121,7 +121,12 @@ def train_dqn():
 
                 # Compute V(s_{t+1}) for the next states.
                 next_state_values = torch.zeros(BATCH_SIZE, device=device)
-                next_state_values[non_final_mask] = target_net(non_final_next_states).max(1)[0].detach()
+                # Compute V(s_{t+1}) for the next states using Double DQN
+                # Select action from policy_net, evaluate with target_net
+                next_state_values = torch.zeros(BATCH_SIZE, device=device)
+                if non_final_next_states.numel() > 0:
+                    next_state_actions = policy_net(non_final_next_states).max(1)[1].unsqueeze(1)
+                    next_state_values[non_final_mask] = target_net(non_final_next_states).gather(1, next_state_actions).squeeze().detach()
                 
                 # Compute the expected Q values
                 expected_q_values = (next_state_values * GAMMA) + reward_batch.float()

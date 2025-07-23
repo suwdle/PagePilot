@@ -62,7 +62,7 @@ class PagePilotEnv(gym.Env):
 
 def main():
     data_path = "./data/labeled_waveui.csv"
-    model_path = "./models/reward_simulator_lr.joblib"
+    model_path = "./models/reward_simulator_lgbm.joblib"
     env = PagePilotEnv(data_path, model_path)
 
     obs = env.reset()

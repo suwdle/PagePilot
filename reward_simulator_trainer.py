@@ -1,10 +1,10 @@
 
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
 import joblib
 import os
+import lightgbm as lgb
 
 def main():
     """
@@ -21,14 +21,25 @@ def main():
     features = features.fillna(0)
     target = df['simulated_ctr']
 
+    # Sanitize feature names for LightGBM
+    features.columns = [col.replace(' ', '_').replace('[', '').replace(']', '').replace('<', '').replace('>', '').replace('=', '').replace(',', '') for col in features.columns]
+
+    # Handle duplicate column names by appending a suffix
+    cols = pd.Series(features.columns)
+    for dup in cols[cols.duplicated()].unique():
+        cols[cols[cols == dup].index.values.tolist()] = [dup + '_' + str(i) if i != 0 else dup for i, i_val in enumerate(cols[cols == dup].index.values)]
+    features.columns = cols
+
+    print("Sanitized and unique feature names:", features.columns.tolist())
+
     print("Splitting data into training and testing sets...")
     X_train, X_test, y_train, y_test = train_test_split(
         features, target, test_size=0.2, random_state=42
     )
 
-    # Train a baseline Linear Regression model
-    print("Training the Linear Regression model...")
-    model = LinearRegression()
+    # Train a LightGBM Regressor model
+    print("Training the LightGBM Regressor model...")
+    model = lgb.LGBMRegressor(random_state=42)
     model.fit(X_train, y_train)
 
     # Evaluate the model
@@ -40,7 +51,7 @@ def main():
     # Save the trained model
     model_dir = "./models"
     os.makedirs(model_dir, exist_ok=True)
-    model_path = os.path.join(model_dir, "reward_simulator_lr.joblib")
+    model_path = os.path.join(model_dir, "reward_simulator_lgbm.joblib")
     print(f"Saving the trained model to {model_path}...")
     joblib.dump(model, model_path)
 
