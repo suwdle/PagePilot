@@ -189,10 +189,9 @@ def main():
     action = env.action_space.sample()
     obs, reward, done, info = env.step(action)
 
-    print(f"
-Action taken: {action}")
-    print(f"New Observation Vector (flattened):
-{obs}")
+    print(f"Action taken: {action}")
+    print("New Observation Vector (flattened):")
+    print(obs)
     print(f"Reward: {reward}")
     print(f"Done: {done}")
 
