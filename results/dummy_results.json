@@ -1,0 +1,44 @@
+
+[
+    {
+        "scenario_name": "Login Success",
+        "test_id": "test_001",
+        "timestamp": "2025-07-28T10:30:00Z",
+        "success": true,
+        "duration_seconds": 45,
+        "steps": [
+            {"step": 1, "action": "Navigate to login page", "screenshot": "results/screenshots/001_step1.png"},
+            {"step": 2, "action": "Enter username", "screenshot": "results/screenshots/001_step2.png"},
+            {"step": 3, "action": "Enter password", "screenshot": "results/screenshots/001_step3.png"},
+            {"step": 4, "action": "Click login button", "screenshot": "results/screenshots/001_step4.png"}
+        ],
+        "error_message": null
+    },
+    {
+        "scenario_name": "Login Failure - Invalid Password",
+        "test_id": "test_002",
+        "timestamp": "2025-07-28T10:35:00Z",
+        "success": false,
+        "duration_seconds": 30,
+        "steps": [
+            {"step": 1, "action": "Navigate to login page", "screenshot": "results/screenshots/002_step1.png"},
+            {"step": 2, "action": "Enter username", "screenshot": "results/screenshots/002_step2.png"},
+            {"step": 3, "action": "Enter invalid password", "screenshot": "results/screenshots/002_step3.png"}
+        ],
+        "error_message": "Login failed: Invalid credentials"
+    },
+    {
+        "scenario_name": "Add to Cart",
+        "test_id": "test_003",
+        "timestamp": "2025-07-28T11:00:00Z",
+        "success": true,
+        "duration_seconds": 120,
+        "steps": [
+            {"step": 1, "action": "Login", "screenshot": "results/screenshots/003_step1.png"},
+            {"step": 2, "action": "Search for 'Laptop'", "screenshot": "results/screenshots/003_step2.png"},
+            {"step": 3, "action": "Select first item", "screenshot": "results/screenshots/003_step3.png"},
+            {"step": 4, "action": "Click 'Add to Cart'", "screenshot": "results/screenshots/003_step4.png"}
+        ],
+        "error_message": null
+    }
+]
