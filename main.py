@@ -1,55 +1,36 @@
-import argparse
-import sys
-
-def run_login_scenario():
-    """Simulates a login test scenario."""
-    print("Executing login scenario...")
-    # In a real implementation, you would have selenium/playwright calls here
-    print("Scenario: User enters username and password, clicks login.")
-    print("Login scenario completed successfully.")
-
-def run_purchase_scenario():
-    """Simulates a purchase test scenario."""
-    print("Executing purchase scenario...")
-    print("Scenario: User searches for an item, adds to cart, and checks out.")
-    print("Purchase scenario completed successfully.")
-
-def run_search_scenario():
-    """Simulates a search test scenario."""
-    print("Executing search scenario...")
-    print("Scenario: User types a query into the search bar and hits enter.")
-    print("Search scenario completed successfully.")
+import yaml
+import os
+from rl_env import LivePagePilotEnv
+from dqn_trainer import train_dqn_live
 
 def main():
-    parser = argparse.ArgumentParser(description="PagePilot Agent: Run UI testing and optimization tasks.")
-    parser.add_argument(
-        "--scenario",
-        type=str,
-        choices=["login_scenario", "purchase_scenario", "search_scenario"],
-        help="The name of the test scenario to run."
-    )
+    """
+    Main entry point for the PagePilot application.
+    Loads configuration, initializes the live environment, and starts the training/optimization process.
+    """
+    print("--- Starting PagePilot Optimization ---")
 
-    # If no arguments are provided, print help and exit
-    if len(sys.argv) == 1:
-        parser.print_help(sys.stderr)
-        sys.exit(1)
+    # Load configuration
+    config_path = 'config.yaml'
+    if not os.path.exists(config_path):
+        print(f"Error: Configuration file not found at {config_path}")
+        return
+    
+    print(f"Loading configuration from {config_path}...")
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
 
-    args = parser.parse_args()
+    # Create and initialize the live environment
+    print("Initializing live browser environment...")
+    env = LivePagePilotEnv(config_path=config_path)
 
-    if args.scenario:
-        print(f"--- Running Scenario: {args.scenario} ---")
-        if args.scenario == "login_scenario":
-            run_login_scenario()
-        elif args.scenario == "purchase_scenario":
-            run_purchase_scenario()
-        elif args.scenario == "search_scenario":
-            run_search_scenario()
-        else:
-            print(f"Error: Unknown scenario '{args.scenario}'", file=sys.stderr)
-            sys.exit(1)
-    else:
-        print("No task specified. Please provide an argument, e.g., --scenario.")
+    # Start the DQN training process which performs the optimization
+    print("Starting DQN agent for optimization...")
+    train_dqn_live(env, config)
 
+    # Close the environment
+    print("Optimization finished. Closing environment.")
+    env.close()
 
 if __name__ == "__main__":
     main()

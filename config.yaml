@@ -1,0 +1,17 @@
+# The web page to be optimized
+target_url: "https://www.iana.org/domains/example/"
+
+# The CSS selector for the element to be optimized (the goal)
+# Example: a purchase button, a sign-up form, etc.
+goal_element_selector: "h1"
+
+# The objective of the optimization for the goal element
+# - "maximize_size": Make the element as large as possible.
+# - "move_to_center": Move the element as close to the center of the screen as possible.
+optimization_objective: "maximize_size"
+
+# Number of optimization steps to perform
+optimization_steps: 20
+
+# Directory to save results (screenshots, etc.)
+output_dir: "results/live_test"
