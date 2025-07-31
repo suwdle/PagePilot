@@ -4,45 +4,8 @@ import numpy as np
 import pandas as pd
 import joblib
 import random
-
-# Helper function from reward_simulator_trainer to create features dynamically
-def create_aggregated_features(elements_df):
-    """
-    Dynamically creates aggregated features from a DataFrame of UI elements.
-    """
-    if elements_df.empty:
-        # Return a zeroed DataFrame with the expected columns if the input is empty
-        # This is a simplified example; you might need a more robust way to get all possible feature columns
-        # A potential approach is to define the columns explicitly
-        return pd.DataFrame(np.zeros((1, 10)), columns=[f'feature_{i}' for i in range(10)])
-
-
-    df = elements_df.copy()
-    df['width'] = df['x2'] - df['x1']
-    df['height'] = df['y2'] - df['y1']
-    df['area'] = df['width'] * df['height']
-    df['center_x'] = (df['x1'] + df['x2']) / 2
-    df['center_y'] = (df['y1'] + df['y2']) / 2
-    df['text_density'] = df['ocr_text'].str.len() / (df['area'] + 1e-6)
-    df['text_density'] = df['text_density'].fillna(0)
-
-    df_type_dummies = pd.get_dummies(df['type'], prefix='type')
-    df = pd.concat([df, df_type_dummies], axis=1)
-
-    agg_dict = {
-        'width': 'mean', 'height': 'mean', 'area': ['mean', 'sum'],
-        'center_x': 'mean', 'center_y': 'mean', 'text_density': 'mean',
-        **{col: 'sum' for col in df_type_dummies.columns}
-    }
-    
-    # Aggregate
-    agg_df = pd.DataFrame(df.agg(agg_dict)).transpose()
-    agg_df.columns = ['_'.join(col).strip() for col in agg_df.columns.values]
-    
-    # Add component count
-    agg_df['component_count'] = len(df)
-    
-    return agg_df
+import json # To load feature names
+from utils import create_aggregated_features # Import from the new utils file
 
 class PagePilotEnv(gym.Env):
     """
@@ -57,6 +20,17 @@ class PagePilotEnv(gym.Env):
         self.reward_model = joblib.load(model_path)
         self.unique_screenshot_ids = self.raw_data['screenshot_id'].unique()
         
+        # Load feature information saved during training
+        feature_info_path = model_path.replace(".joblib", "_features.json")
+        try:
+            with open(feature_info_path, 'r') as f:
+                feature_info = json.load(f)
+            self.reward_feature_names = feature_info['feature_names']
+            self.all_type_columns = feature_info['all_type_columns']
+        except FileNotFoundError:
+            raise IOError(f"Feature info file not found at {feature_info_path}. "
+                          f"Please run reward_simulator_trainer.py first.")
+
         self.max_elements = max_elements
         self.feature_size = feature_size  # type, x1, y1, x2, y2, ocr_text_len, purpose_len
         
@@ -158,23 +132,23 @@ class PagePilotEnv(gym.Env):
         current_elements_df = pd.DataFrame(self.state)
         
         # Create aggregated features for the reward model
-        aggregated_features = create_aggregated_features(current_elements_df)
+        # Pass all_type_columns to ensure feature consistency
+        aggregated_features = create_aggregated_features(
+            current_elements_df, 
+            all_possible_type_columns=self.all_type_columns
+        )
         
-        # The reward model expects features in a specific order.
-        # We need to ensure the columns match what the model was trained on.
-        # This is a critical step. For now, we assume the columns are compatible.
-        # A robust implementation would save the feature list with the model.
-        
-        # Reorder columns to match the model's training columns
-        # This is a simplified approach. A better way is to save/load the column order.
+        # Ensure the feature order matches the model's training order
         try:
-            reward_features = aggregated_features[self.reward_model.feature_name_]
+            reward_features = aggregated_features[self.reward_feature_names]
             return self.reward_model.predict(reward_features)[0]
+        except KeyError as e:
+            print(f"Error: A feature is missing from the aggregated data: {e}")
+            # Return a default low reward if features don't align
+            return -1.0
         except Exception as e:
-            # Fallback if feature names don't align perfectly
-            print(f"Warning: Could not align features for reward prediction. Error: {e}")
-            # Providing a generic reward or handling the error appropriately
-            return 0.0
+            print(f"An unexpected error occurred during reward prediction: {e}")
+            return -1.0
 
 
 def main():

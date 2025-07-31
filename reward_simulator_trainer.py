@@ -6,50 +6,8 @@ import joblib
 import os
 import lightgbm as lgb
 import numpy as np
-
-
-def create_aggregated_features(raw_df):
-    """
-    Creates a pandas DataFrame with aggregated features per screenshot from raw element data.
-    """
-    df = raw_df.copy()
-
-    # Basic feature extraction for each element
-    df['width'] = df['x2'] - df['x1']
-    df['height'] = df['y2'] - df['y1']
-    df['area'] = df['width'] * df['height']
-    df['center_x'] = (df['x1'] + df['x2']) / 2
-    df['center_y'] = (df['y1'] + df['y2']) / 2
-    df['text_density'] = df['ocr_text'].str.len() / (df['area'] + 1e-6)
-    df['text_density'] = df['text_density'].fillna(0)
-
-    # One-hot encode the 'type' column
-    df_type_dummies = pd.get_dummies(df['type'], prefix='type')
-    df = pd.concat([df, df_type_dummies], axis=1)
-
-    # --- Aggregate features per screenshot_id ---
-    agg_dict = {
-        'width': 'mean',
-        'height': 'mean',
-        'area': ['mean', 'sum'],
-        'center_x': 'mean',
-        'center_y': 'mean',
-        'text_density': 'mean',
-        **{col: 'sum' for col in df_type_dummies.columns}  # Count of each element type
-    }
-
-    # Group by screenshot_id and aggregate
-    agg_df = df.groupby('screenshot_id').agg(agg_dict).reset_index()
-
-    # Flatten MultiIndex columns
-    agg_df.columns = ['_'.join(col).strip() if isinstance(col, tuple) else col for col in agg_df.columns.values]
-    agg_df = agg_df.rename(columns={'screenshot_id_': 'screenshot_id'})
-
-    # Add a component count feature
-    component_counts = df.groupby('screenshot_id').size().reset_index(name='component_count')
-    agg_df = pd.merge(agg_df, component_counts, on='screenshot_id')
-
-    return agg_df
+from utils import create_aggregated_features # Import the function
+import json # To save feature names
 
 
 def calculate_simulated_ctr(row, screen_width=1280, screen_height=720):
@@ -96,7 +54,9 @@ def main():
 
     # Dynamically create aggregated features
     print("Creating aggregated features from raw data...")
-    features_df = create_aggregated_features(raw_df)
+    # Get all possible type columns for consistency
+    all_type_columns = [f'type_{t}' for t in raw_df['type'].unique()]
+    features_df = create_aggregated_features(raw_df, all_possible_type_columns=all_type_columns)
 
     # Generate reward labels
     print("Generating simulated CTR labels...")
@@ -132,13 +92,24 @@ def main():
     mse = mean_squared_error(y_test, y_pred)
     print(f"Mean Squared Error on the test set: {mse:.6f}")
 
-    # Save the trained model
+    # Save the trained model and feature information
     model_dir = "./models"
     os.makedirs(model_dir, exist_ok=True)
     model_path = os.path.join(model_dir, "reward_simulator_lgbm.joblib")
+    feature_info_path = os.path.join(model_dir, "reward_model_features.json")
+
     print(f"Saving the trained model to {model_path}...")
     joblib.dump(model, model_path)
 
+    # Save feature names and all_type_columns for consistent use in the environment
+    feature_info = {
+        'feature_names': list(features.columns),
+        'all_type_columns': all_type_columns
+    }
+    with open(feature_info_path, 'w') as f:
+        json.dump(feature_info, f)
+
+    print(f"Feature information saved to {feature_info_path}")
     print("Reward simulator training complete.")
 
 
