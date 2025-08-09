@@ -23,7 +23,7 @@ def load_model(model_path):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # The dimensions are known and fixed for our specific environment
     input_dim = 4  # x, y, width, height
-    output_dim = 4 # up, down, left, right
+    output_dim = 8 # up, down, left, right, increase/decrease width/height
     
     model = DQN(input_dim, output_dim).to(device)
     if not os.path.exists(model_path):

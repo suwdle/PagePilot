@@ -31,8 +31,10 @@ body {
     position: absolute; /* This allows us to move the button with top/left */
     top: 50%;
     left: 50%;
+    width: 150px; /* Initial width */
+    height: 50px;  /* Initial height */
+    box-sizing: border-box; /* Include padding and border in the element's total width and height */
     transform: translate(-50%, -50%); /* Center the button initially */
-    padding: 15px 30px;
     font-size: 1.2em;
     cursor: pointer;
     border: none;

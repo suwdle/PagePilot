@@ -1,4 +1,3 @@
-
 import os
 
 # --- Paths ---
@@ -17,7 +16,7 @@ SCREENSHOT_DIR = os.path.join(ROOT_DIR, "results", "screenshots")
 MAX_STEPS_PER_EPISODE = 20
 
 # --- DQN Trainer Settings ---
-EPISODES = 50
+EPISODES = 500
 BATCH_SIZE = 32
 GAMMA = 0.99
 EPS_START = 0.9
