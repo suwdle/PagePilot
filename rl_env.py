@@ -1,173 +1,154 @@
+
+
 import gym
 from gym import spaces
 import numpy as np
-import pandas as pd
-import joblib
-import random
-import json # To load feature names
-from utils import create_aggregated_features # Import from the new utils file
+from playwright.sync_api import sync_playwright
+import os
+import config
 
 class PagePilotEnv(gym.Env):
     """
-    Custom Environment for UI layout optimization using raw element data.
+    Custom Environment for UI layout optimization that interacts with a local website
+    using Playwright.
     """
-    metadata = {'render.modes': ['human']}
+    metadata = {'render.modes': ['human', 'rgb_array']}
 
-    def __init__(self, data_path, model_path, max_elements=50, feature_size=8):
+    def __init__(self, file_path):
         super(PagePilotEnv, self).__init__()
 
-        self.raw_data = pd.read_csv(data_path)
-        self.reward_model = joblib.load(model_path)
-        self.unique_screenshot_ids = self.raw_data['screenshot_id'].unique()
-        
-        # Load feature information saved during training
-        feature_info_path = model_path.replace(".joblib", "_features.json")
-        try:
-            with open(feature_info_path, 'r') as f:
-                feature_info = json.load(f)
-            self.reward_feature_names = feature_info['feature_names']
-            self.all_type_columns = feature_info['all_type_columns']
-        except FileNotFoundError:
-            raise IOError(f"Feature info file not found at {feature_info_path}. "
-                          f"Please run reward_simulator_trainer.py first.")
+        self.playwright = sync_playwright().start()
+        self.browser = self.playwright.chromium.launch(headless=True)
+        self.page = self.browser.new_page()
 
-        self.max_elements = max_elements
-        self.feature_size = feature_size  # type, x1, y1, x2, y2, ocr_text_len, purpose_len
-        
-        # Action: 0-index of element, 1-property to change (e.g., x1), 2-new value
-        # Simplified: select element, move it (up, down, left, right)
-        self.action_space = spaces.Discrete(self.max_elements * 4) # 4 directions for each element
-        
-        # Observation: Padded list of element features
+        self.local_file_path = "file://" + os.path.abspath(file_path)
+        self.page.goto(self.local_file_path)
+
+        # Define the action space: 0:Up, 1:Down, 2:Left, 3:Right
+        self.action_space = spaces.Discrete(4)
+
+        # Define the observation space: [x, y, width, height] of the button
         self.observation_space = spaces.Box(
-            low=0, high=1, shape=(self.max_elements * self.feature_size,), dtype=np.float32
+            low=np.array([0, 0, 0, 0]),
+            high=np.array([2000, 2000, 500, 500]), # Generous limits
+            dtype=np.float32
         )
-        
-        self.state = [] # List of element dictionaries
-        self.current_screenshot_id = None
 
-    def _state_to_vector(self, state):
-        """Converts the list of element dicts into a fixed-size numpy vector."""
-        vector = np.zeros((self.max_elements, self.feature_size), dtype=np.float32)
-        
-        # Define a mapping from element type to a numerical value
-        type_mapping = {t: i for i, t in enumerate(self.raw_data['type'].unique())}
+        # Get container dimensions for reward calculation
+        container_box = self.page.locator("#element-container").bounding_box()
+        self.container_center_x = container_box['x'] + container_box['width'] / 2
+        self.container_center_y = container_box['y'] + container_box['height'] / 2
+        self.max_distance = np.sqrt(self.container_center_x**2 + self.container_center_y**2)
 
-        for i, element in enumerate(state):
-            if i >= self.max_elements:
-                break
-            
-            # Normalize features to be roughly between 0 and 1
-            vector[i, 0] = type_mapping.get(element['type'], -1) / len(type_mapping)
-            vector[i, 1] = element['x1'] / 1920  # Assuming max screen width
-            vector[i, 2] = element['y1'] / 1080  # Assuming max screen height
-            vector[i, 3] = element['x2'] / 1920
-            vector[i, 4] = element['y2'] / 1080
-            vector[i, 5] = len(element.get('ocr_text', '')) / 100 # Normalize text length
-            vector[i, 6] = len(element.get('purpose', '')) / 50 # Normalize purpose length
-            # Last feature can be padding or another metric
-            vector[i, 7] = 1.0 # Indicates an active element
+        self.current_step = 0
+        self.max_steps_per_episode = config.MAX_STEPS_PER_EPISODE
 
-        return vector.flatten()
+    def _get_state(self):
+        """Retrieves the current state (button's bounding box) from the webpage."""
+        button_box = self.page.locator("#cta-button").bounding_box()
+        if button_box:
+            return np.array([
+                button_box['x'],
+                button_box['y'],
+                button_box['width'],
+                button_box['height']
+            ], dtype=np.float32)
+        # Return a zero vector if the element is not found
+        return np.zeros(self.observation_space.shape, dtype=np.float32)
+
+    def _calculate_reward(self, state):
+        """Calculates reward based on the button's position."""
+        button_center_x = state[0] + state[2] / 2
+        button_center_y = state[1] + state[3] / 2
+
+        # Calculate distance from the container's center
+        distance = np.sqrt(
+            (button_center_x - self.container_center_x)**2 +
+            (button_center_y - self.container_center_y)**2
+        )
+
+        # Normalize distance and invert it to get a proximity score
+        # Reward is higher when the button is closer to the center
+        reward = 1.0 - (distance / self.max_distance)
+        return reward
 
     def step(self, action):
-        element_index = action // 4
-        move_direction = action % 4
+        self.current_step += 1
 
-        if element_index >= len(self.state):
-            # Invalid action, no change, small penalty
-            reward = -0.1
-            done = False
-            return self._state_to_vector(self.state), reward, done, {"error": "Invalid element index"}
+        # --- Take Action ---
+        move_amount = 10  # pixels to move
+        button_id = "#cta-button"
 
-        self._take_action(element_index, move_direction)
-        
-        reward = self._get_reward()
-        
-        # For simplicity, we'll say an episode is one step. Can be changed.
-        done = True 
-        
-        return self._state_to_vector(self.state), reward, done, {}
+        # Get current position
+        button_style = self.page.evaluate(f"window.getComputedStyle(document.querySelector('{button_id}'))")
+        top = float(button_style['top'].replace('px', ''))
+        left = float(button_style['left'].replace('px', ''))
+
+        if action == 0:  # Up
+            top -= move_amount
+        elif action == 1:  # Down
+            top += move_amount
+        elif action == 2:  # Left
+            left -= move_amount
+        elif action == 3:  # Right
+            left += move_amount
+
+        # Apply the new style using JavaScript
+        self.page.evaluate(f"document.querySelector('{button_id}').style.top = '{top}px';")
+        self.page.evaluate(f"document.querySelector('{button_id}').style.left = '{left}px';")
+
+        # --- Get New State and Reward ---
+        new_state = self._get_state()
+        reward = self._calculate_reward(new_state)
+
+        # --- Check if Done ---
+        done = self.current_step >= self.max_steps_per_episode
+
+        return new_state, reward, done, {}
 
     def reset(self):
-        self.current_screenshot_id = random.choice(self.unique_screenshot_ids)
-        self.state = self.raw_data[self.raw_data['screenshot_id'] == self.current_screenshot_id].to_dict('records')
-        return self._state_to_vector(self.state)
+        self.current_step = 0
+        # Reload the page to reset the button's position to its initial state
+        self.page.goto(self.local_file_path)
+        return self._get_state()
 
-    def render(self, mode='human', close=False):
-        print(f"Screenshot ID: {self.current_screenshot_id}")
-        for element in self.state:
-            print(element)
+    def render(self, mode='human', output_path="results/screenshots/step.png"):
+        if mode == 'rgb_array':
+            return self.page.screenshot()
+        elif mode == 'human':
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            self.page.screenshot(path=output_path)
+            print(f"Screenshot saved to {output_path}")
 
-    def _take_action(self, element_index, move_direction):
-        """Moves the selected element."""
-        element = self.state[element_index]
-        move_amount = 10 # pixels
-        
-        width = element['x2'] - element['x1']
-        height = element['y2'] - element['y1']
+    def close(self):
+        """Closes the Playwright browser."""
+        self.browser.close()
+        self.playwright.stop()
 
-        if move_direction == 0: # Up
-            element['y1'] -= move_amount
-            element['y2'] = element['y1'] + height
-        elif move_direction == 1: # Down
-            element['y1'] += move_amount
-            element['y2'] = element['y1'] + height
-        elif move_direction == 2: # Left
-            element['x1'] -= move_amount
-            element['x2'] = element['x1'] + width
-        elif move_direction == 3: # Right
-            element['x1'] += move_amount
-            element['x2'] = element['x1'] + width
-            
-        # Update the state
-        self.state[element_index] = element
-
-    def _get_reward(self):
-        """Calculates reward based on the current state's aggregated features."""
-        if not self.state:
-            return 0.0
-            
-        # Convert current state (list of dicts) to a DataFrame
-        current_elements_df = pd.DataFrame(self.state)
-        
-        # Create aggregated features for the reward model
-        # Pass all_type_columns to ensure feature consistency
-        aggregated_features = create_aggregated_features(
-            current_elements_df, 
-            all_possible_type_columns=self.all_type_columns
-        )
-        
-        # Ensure the feature order matches the model's training order
-        try:
-            reward_features = aggregated_features[self.reward_feature_names]
-            return self.reward_model.predict(reward_features)[0]
-        except KeyError as e:
-            print(f"Error: A feature is missing from the aggregated data: {e}")
-            # Return a default low reward if features don't align
-            return -1.0
-        except Exception as e:
-            print(f"An unexpected error occurred during reward prediction: {e}")
-            return -1.0
-
-
-def main():
-    data_path = "./data/raw_elements.csv"
-    model_path = "./models/reward_simulator_lgbm.joblib"
-    env = PagePilotEnv(data_path, model_path)
-
+if __name__ == '__main__':
+    # --- Test the new environment ---
+    env = PagePilotEnv(file_path=config.WEBSITE_PATH)
+    
     obs = env.reset()
-    print("Initial Observation Vector (flattened):")
-    print(obs)
+    print(f"Initial State (Observation): {obs}")
 
-    action = env.action_space.sample()
-    obs, reward, done, info = env.step(action)
+    for i in range(5):
+        action = env.action_space.sample()
+        print(f"\n--- Step {i+1} ---")
+        print(f"Action taken: {['Up', 'Down', 'Left', 'Right'][action]}")
+        
+        obs, reward, done, info = env.step(action)
+        
+        print(f"New State: {obs}")
+        print(f"Reward: {reward:.4f}")
+        
+        # Render a screenshot
+        screenshot_path = os.path.join(config.SCREENSHOT_DIR, f"step_{i+1}.png")
+        env.render(mode='human', output_path=screenshot_path)
 
-    print(f"Action taken: {action}")
-    print("New Observation Vector (flattened):")
-    print(obs)
-    print(f"Reward: {reward}")
-    print(f"Done: {done}")
-
-if __name__ == "__main__":
-    main()
+        if done:
+            print("Episode finished.")
+            break
+            
+    env.close()
+    print("\nEnvironment test finished and browser closed.")
