@@ -3,41 +3,69 @@
 import gym
 from gym import spaces
 import numpy as np
+import pandas as pd
 import config
-
-from enhanced_reward import EnhancedCTRGenerator
+import joblib
+import os
 
 class PagePilotEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, file_path=None): # file_path is no longer used
+    def __init__(self, persona='casual_browser'):
         super(PagePilotEnv, self).__init__()
         
-        self.reward_generator = EnhancedCTRGenerator()
+        # Load the trained LightGBM model
+        model_path = 'models/reward_simulator_lgbm.joblib'
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Reward simulator model not found at {model_path}. Please run train_reward_simulator.py first.")
+        self.reward_simulator = joblib.load(model_path)
+        self.persona = persona
+
         self.action_space = spaces.Discrete(8)
-        
         self.observation_space = spaces.Box(
             low=np.array([0.0, 0.0, 0.0, 0.0, 0.0]),
             high=np.array([1.0, 1.0, 1.0, 1.0, 1.0]),
             dtype=np.float32
         )
         
-        self.container_size = {'width': 800, 'height': 600}
         self.current_step = 0
         self.max_steps_per_episode = config.MAX_STEPS_PER_EPISODE
         self.current_state = None
         self.previous_potential = 0
 
     def _get_potential(self, state):
-        x, y, _, _, num_elements = state
-        return self.reward_generator.generate_realistic_ctr(np.array([x, y, num_elements * 100]))
+        """Calculates the potential of a state using the loaded LGBM model."""
+        x, y, width, height, _ = state
+        
+        # Create a feature DataFrame that matches the model's training data
+        features = {
+            'pos_x': x,
+            'pos_y': y,
+            'size': width * height,  # Use area as a proxy for size
+            'contrast': 1.0,  # Using a neutral placeholder for contrast
+            'persona_power_user': 1 if self.persona == 'power_user' else 0,
+            'persona_casual_browser': 1 if self.persona == 'casual_browser' else 0,
+            'persona_elderly': 1 if self.persona == 'elderly' else 0,
+        }
+        feature_df = pd.DataFrame([features])
+
+        # Ensure column order is the same as during training
+        training_columns = [
+            'pos_x', 'pos_y', 'size', 'contrast',
+            'persona_power_user', 'persona_casual_browser', 'persona_elderly'
+        ]
+        feature_df = feature_df[training_columns]
+        
+        return self.reward_simulator.predict(feature_df)[0]
 
     def step(self, action):
         self.current_step += 1
         x, y, width, height, num_elements = self.current_state
 
-        move_amount = config.MOVE_AMOUNT / self.container_size['width']
-        size_amount = config.SIZE_AMOUNT / self.container_size['width']
+        # Assume a virtual container size for normalization
+        container_width, container_height = 800, 600
+        move_amount = config.MOVE_AMOUNT / container_width
+        size_amount = config.SIZE_AMOUNT / container_width
 
         if action == 0: y -= move_amount
         elif action == 1: y += move_amount
@@ -63,12 +91,7 @@ class PagePilotEnv(gym.Env):
 
     def reset(self):
         self.current_step = 0
-        initial_x = 0.5
-        initial_y = 0.5
-        initial_width = 0.2
-        initial_height = 0.1
-        num_elements = 0.05 # 5 elements
-        self.current_state = np.array([initial_x, initial_y, initial_width, initial_height, num_elements], dtype=np.float32)
+        self.current_state = np.array([0.5, 0.5, 0.2, 0.1, 0.05], dtype=np.float32)
         self.previous_potential = self._get_potential(self.current_state)
         return self.current_state
 
@@ -79,12 +102,14 @@ class PagePilotEnv(gym.Env):
         pass
 
 if __name__ == '__main__':
-    env = PagePilotEnv()
+    # Test the environment with a specific persona
+    env = PagePilotEnv(persona='power_user')
     obs = env.reset()
+    print(f"Testing with persona: {env.persona}")
     print(f"Initial State: {obs}")
     print(f"Initial Potential: {env.previous_potential:.4f}")
 
-    for i in range(10):
+    for i in range(5):
         action = env.action_space.sample()
         action_map = {0: 'Up', 1: 'Down', 2: 'Left', 3: 'Right', 4: 'IncW', 5: 'DecW', 6: 'IncH', 7: 'DecH'}
         print(f"\n--- Step {i+1}, Action: {action_map[action]} ---")

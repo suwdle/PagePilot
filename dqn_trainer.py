@@ -56,7 +56,7 @@ def train_dqn():
     print(f"Using device: {device}")
 
     # Initialize here once to get dimensions
-    temp_env = PagePilotEnv(file_path=config.WEBSITE_PATH)
+    temp_env = PagePilotEnv(persona='casual_browser')
     input_dim = temp_env.observation_space.shape[0]
     output_dim = temp_env.action_space.n
     temp_env.close()
@@ -71,7 +71,8 @@ def train_dqn():
     steps_done = 0
 
     for i_episode in range(EPISODES):
-        env = PagePilotEnv(file_path=config.WEBSITE_PATH)
+        # Create a new environment for each episode with a specific persona
+        env = PagePilotEnv(persona='casual_browser')
         try:
             state = env.reset()
             total_reward = 0
